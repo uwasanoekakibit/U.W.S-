@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Othello Ultimate 2026</title>
+
+<link rel="manifest" href="data:application/json,{
+  &quot;name&quot;:&quot;Othello Ultimate&quot;,
+  &quot;short_name&quot;:&quot;Othello&quot;,
+  &quot;start_url&quot;:&quot;./&quot;,
+  &quot;display&quot;:&quot;standalone&quot;,
+  &quot;background_color&quot;:&quot;#0f766e&quot;,
+  &quot;theme_color&quot;:&quot;#0f766e&quot;,
+  &quot;icons&quot;:[]
+}">
+
+<style>
+:root{
+ --bg:#eef1f6;
+ --glass:rgba(255,255,255,0.6);
+ --board:#0f766e;
+ --cell:#14b8a6;
+}
+@media (prefers-color-scheme: dark){
+ :root{
+  --bg:#0b0d11;
+  --glass:rgba(20,24,30,0.65);
+  --board:#0a5f58;
+  --cell:#0f8f84;
+ }
+}
+body{
+ margin:0;
+ background:var(--bg);
+ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto;
+ display:flex;
+ justify-content:center;
+ align-items:center;
+ height:100vh;
+}
+.app{
+ backdrop-filter:blur(20px);
+ background:var(--glass);
+ border-radius:28px;
+ padding:18px;
+ box-shadow:0 25px 60px rgba(0,0,0,.18);
+ width:95vw;
+ max-width:520px;
+}
+.header{
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+}
+select{
+ border:none;
+ padding:6px 10px;
+ border-radius:12px;
+}
+.board{
+ margin-top:12px;
+ display:grid;
+ grid-template-columns:repeat(8,1fr);
+ gap:6px;
+ background:var(--board);
+ padding:10px;
+ border-radius:22px;
+}
+.cell{
+ aspect-ratio:1/1;
+ background:var(--cell);
+ border-radius:16px;
+ display:flex;
+ justify-content:center;
+ align-items:center;
+ position:relative;
+}
+.cell.valid::after{
+ content:"";
+ width:24%;
+ height:24%;
+ border-radius:50%;
+ border:2px solid rgba(255,255,255,.8);
+ animation:ring 1.4s infinite;
+}
+@keyframes ring{
+ 0%{transform:scale(.6);opacity:.6}
+ 50%{transform:scale(1.3);opacity:1}
+ 100%{transform:scale(.6);opacity:.6}
+}
+.stone{
+ width:72%;
+ height:72%;
+ border-radius:50%;
+ transform-style:preserve-3d;
+ transition:transform .55s cubic-bezier(.2,.8,.2,1);
+ position:relative;
+}
+.stone::before{
+ content:"";
+ position:absolute;
+ top:8%;
+ left:12%;
+ width:40%;
+ height:30%;
+ border-radius:50%;
+ background:rgba(255,255,255,.35);
+ filter:blur(2px);
+}
+.black{
+ background:radial-gradient(circle at 30% 30%, #444, #000);
+}
+.white{
+ background:radial-gradient(circle at 30% 30%, #fff, #ddd);
+}
+.flip{
+ transform:rotateY(180deg);
+}
+.footer{
+ margin-top:10px;
+ font-weight:600;
+ text-align:center;
+}
+.score{
+ display:flex;
+ justify-content:space-between;
+ margin-top:6px;
+}
+button{
+ margin-top:8px;
+ width:100%;
+ padding:10px;
+ border:none;
+ border-radius:14px;
+ background:#111;
+ color:#fff;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+ <div class="header">
+  <div>Othello Ultimate</div>
+  <select id="level">
+   <option value="1">Easy</option>
+   <option value="3" selected>Normal</option>
+   <option value="5">Hard</option>
+  </select>
+ </div>
+ <div id="board" class="board"></div>
+ <div class="score" id="score"></div>
+ <div class="footer" id="status"></div>
+ <button onclick="reset()">リセット</button>
+</div>
+
+<script>
+const SIZE=8;
+let board=[];
+let player=1;
+const CPU=-1;
+let rating=Number(localStorage.getItem("rating")||1200);
+
+const weight=[
+[120,-20,20,5,5,20,-20,120],
+[-20,-40,-5,-5,-5,-5,-40,-20],
+[20,-5,15,3,3,15,-5,20],
+[5,-5,3,3,3,3,-5,5],
+[5,-5,3,3,3,3,-5,5],
+[20,-5,15,3,3,15,-5,20],
+[-20,-40,-5,-5,-5,-5,-40,-20],
+[120,-20,20,5,5,20,-20,120]
+];
+
+const boardEl=document.getElementById("board");
+const statusEl=document.getElementById("status");
+const scoreEl=document.getElementById("score");
+
+function reset(){
+ board=Array.from({length:SIZE},()=>Array(SIZE).fill(0));
+ board[3][3]=CPU;
+ board[4][4]=CPU;
+ board[3][4]=1;
+ board[4][3]=1;
+ player=1;
+ render();
+}
+
+function inB(x,y){return x>=0&&y>=0&&x<SIZE&&y<SIZE;}
+
+function flips(x,y,p,b=board){
+ if(b[y][x]!=0)return [];
+ const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+ let out=[];
+ for(const[dX,dY]of dirs){
+  let nx=x+dX,ny=y+dY,tmp=[];
+  while(inB(nx,ny)&&b[ny][nx]==-p){
+   tmp.push([nx,ny]); nx+=dX; ny+=dY;
+  }
+  if(inB(nx,ny)&&b[ny][nx]==p) out.push(...tmp);
+ }
+ return out;
+}
+
+function valid(p,b=board){
+ let m=[];
+ for(let y=0;y<SIZE;y++)
+ for(let x=0;x<SIZE;x++)
+  if(flips(x,y,p,b).length)m.push([x,y]);
+ return m;
+}
+
+function render(){
+ boardEl.innerHTML="";
+ const moves=valid(player);
+ for(let y=0;y<SIZE;y++){
+  for(let x=0;x<SIZE;x++){
+   const c=document.createElement("div");
+   c.className="cell";
+   if(moves.some(m=>m[0]==x&&m[1]==y))
+    c.classList.add("valid");
+   c.onclick=()=>human(x,y);
+
+   if(board[y][x]!=0){
+    const s=document.createElement("div");
+    s.className="stone "+(board[y][x]==1?"black":"white");
+    c.appendChild(s);
+   }
+   boardEl.appendChild(c);
+  }
+ }
+ updateInfo();
+}
+
+function updateInfo(){
+ let b=0,w=0;
+ board.flat().forEach(v=>{if(v==1)b++;if(v==-1)w++;});
+ scoreEl.innerHTML=`⚫ ${b}　⚪ ${w}　｜Rating ${rating}`;
+ statusEl.textContent=(player==1?"あなた":"CPU")+"のターン";
+}
+
+function move(x,y,p){
+ const f=flips(x,y,p);
+ if(!f.length)return false;
+ board[y][x]=p;
+ f.forEach(([fx,fy])=>board[fy][fx]=p);
+ if(navigator.vibrate)navigator.vibrate(20);
+ return true;
+}
+
+function human(x,y){
+ if(player!=1)return;
+ if(!move(x,y,1))return;
+ next();
+}
+
+function next(){
+ player*=-1;
+ if(!valid(player).length){
+  player*=-1;
+  if(!valid(player).length){end();return;}
+ }
+ render();
+ if(player==CPU)setTimeout(cpu,350);
+}
+
+function evaluate(b){
+ let s=0;
+ for(let y=0;y<SIZE;y++)
+ for(let x=0;x<SIZE;x++)
+  s+=b[y][x]*weight[y][x];
+ return -s;
+}
+
+function minimax(b,p,d,alpha,beta){
+ if(d==0)return evaluate(b);
+ const m=valid(p,b);
+ if(!m.length)return evaluate(b);
+
+ if(p===CPU){
+  let value=-Infinity;
+  for(const [x,y] of m){
+   const c=b.map(r=>[...r]);
+   const f=flips(x,y,p,c);
+   c[y][x]=p; f.forEach(([fx,fy])=>c[fy][fx]=p);
+   value=Math.max(value,minimax(c,-p,d-1,alpha,beta));
+   alpha=Math.max(alpha,value);
+   if(alpha>=beta)break;
+  }
+  return value;
+ }else{
+  let value=Infinity;
+  for(const [x,y] of m){
+   const c=b.map(r=>[...r]);
+   const f=flips(x,y,p,c);
+   c[y][x]=p; f.forEach(([fx,fy])=>c[fy][fx]=p);
+   value=Math.min(value,minimax(c,-p,d-1,alpha,beta));
+   beta=Math.min(beta,value);
+   if(beta<=alpha)break;
+  }
+  return value;
+ }
+}
+
+function cpu(){
+ const m=valid(CPU);
+ if(!m.length){next();return;}
+ const depth=parseInt(document.getElementById("level").value);
+ let best=-Infinity,choice=m[0];
+ for(const [x,y] of m){
+  const c=board.map(r=>[...r]);
+  const f=flips(x,y,CPU,c);
+  c[y][x]=CPU; f.forEach(([fx,fy])=>c[fy][fx]=CPU);
+  const val=minimax(c,1,depth,-Infinity,Infinity);
+  if(val>best){best=val;choice=[x,y];}
+ }
+ move(choice[0],choice[1],CPU);
+ next();
+}
+
+function end(){
+ let b=0,w=0;
+ board.flat().forEach(v=>{if(v==1)b++;if(v==-1)w++;});
+ let result=b>w?1:b<w?-1:0;
+ if(result==1)rating+=20;
+ if(result==-1)rating-=15;
+ localStorage.setItem("rating",rating);
+ statusEl.textContent=b>w?"あなたの勝ち！":b<w?"CPUの勝ち":"引き分け";
+}
+
+reset();
+</script>
+</body>
+</html>
